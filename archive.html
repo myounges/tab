@@ -31,6 +31,7 @@
     </div>
   </header>
   <div id="syncStatus" class="sync-status" aria-live="polite"></div>
+  <div id="lastSyncStatus" class="last-sync" aria-live="polite"></div>
 
   <main id="main-content">
     <div id="archivesContainer" aria-live="polite" aria-atomic="true"></div>
@@ -68,7 +69,9 @@
         Device Name
         <input type="text" id="settingsDeviceName" placeholder="My Laptop" autocomplete="off">
       </label>
+      <div id="connectionResult" class="connection-result"></div>
       <div class="modal-actions">
+        <button id="testConnectionBtn" class="btn-outline" type="button">Test Connection</button>
         <button id="settingsCancel">Cancel</button>
         <button id="settingsSave" class="btn-confirm">Save</button>
       </div>

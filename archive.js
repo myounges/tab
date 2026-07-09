@@ -1,5 +1,7 @@
-import { getAllArchives, deleteArchive } from './storage.js';
-import { pushToGitHub, pullFromGitHub, getConfig, saveConfig } from './github-sync.js';
+import { getAllArchives, saveArchive, deleteArchive } from './storage.js';
+
+const storage = { getAllArchives, saveArchive };
+import { pushToGitHub, pullFromGitHub, getConfig, saveConfig, testConnection } from './github-sync.js';
 import { getClientInfo, setClientName } from './client-config.js';
 
 const container = document.getElementById('archivesContainer');
@@ -22,6 +24,9 @@ const settingsPassphrase = document.getElementById('settingsPassphrase');
 const settingsDeviceName = document.getElementById('settingsDeviceName');
 const settingsCancel = document.getElementById('settingsCancel');
 const settingsSave = document.getElementById('settingsSave');
+const testConnectionBtn = document.getElementById('testConnectionBtn');
+const connectionResult = document.getElementById('connectionResult');
+const lastSyncStatus = document.getElementById('lastSyncStatus');
 
 let archives = [];
 let searchQuery = '';
@@ -107,7 +112,7 @@ async function doPush() {
   pushBtn.disabled = true;
   setSyncStatus('Pushing to GitHub…');
   try {
-    await pushToGitHub();
+    await pushToGitHub(storage);
     setSyncStatus('Pushed successfully.', 'success');
   } catch (err) {
     setSyncStatus(`Push failed: ${err.message}`, 'error');
@@ -119,7 +124,7 @@ async function doPull() {
   pullBtn.disabled = true;
   setSyncStatus('Pulling from GitHub…');
   try {
-    const result = await pullFromGitHub();
+    const result = await pullFromGitHub(storage);
     if (result.added === 0) {
       setSyncStatus(`Up to date (${result.total} archives on GitHub).`, 'success');
     } else {
@@ -171,6 +176,57 @@ settingsSave.addEventListener('click', async () => {
     setSyncStatus(`Failed to save settings: ${err.message}`, 'error');
   }
 });
+
+testConnectionBtn.addEventListener('click', async () => {
+  const pat = settingsPat.value.trim();
+  const passphrase = settingsPassphrase.value.trim();
+  if (!pat || !passphrase) {
+    connectionResult.textContent = 'Enter a PAT and passphrase first.';
+    connectionResult.className = 'connection-result error';
+    return;
+  }
+  testConnectionBtn.disabled = true;
+  connectionResult.textContent = 'Testing connection…';
+  connectionResult.className = 'connection-result';
+  try {
+    const res = await testConnection(pat, passphrase);
+    const parts = [];
+    if (res.patValid) parts.push('✓ PAT valid');
+    else parts.push('✗ PAT invalid');
+    if (res.fileExists) {
+      parts.push(`✓ remote file found (${res.archiveCount} archives)`);
+      if (res.decryptSuccess) parts.push('✓ decryption OK');
+      else parts.push('✗ decryption failed');
+    } else {
+      parts.push('— no remote file yet (first sync will create it)');
+    }
+    const text = parts.join(' | ');
+    connectionResult.textContent = text;
+    connectionResult.className = 'connection-result' + (res.error && (!res.patValid || (res.fileExists && !res.decryptSuccess)) ? ' error' : ' success');
+    if (res.error && !text.includes(res.error)) connectionResult.textContent += ` — ${res.error}`;
+  } catch (e) {
+    connectionResult.textContent = `Error: ${e.message}`;
+    connectionResult.className = 'connection-result error';
+  }
+  testConnectionBtn.disabled = false;
+});
+
+async function loadLastSyncStatus() {
+  try {
+    const { lastSyncResult } = await chrome.storage.local.get('lastSyncResult');
+    if (!lastSyncResult) return;
+    const time = lastSyncResult.at ? new Date(lastSyncResult.at).toLocaleTimeString() : '';
+    const parts = [];
+    if (lastSyncResult.pulled > 0) parts.push(`Pulled ${lastSyncResult.pulled}`);
+    if (lastSyncResult.pushed) parts.push('Pushed');
+    if (lastSyncResult.pullError) parts.push(`Pull error: ${lastSyncResult.pullError}`);
+    if (lastSyncResult.pushError) parts.push(`Push error: ${lastSyncResult.pushError}`);
+    if (parts.length === 0) parts.push('No sync attempted');
+    const hasError = lastSyncResult.pullError || lastSyncResult.pushError;
+    lastSyncStatus.textContent = `[${time}] ${parts.join(' · ')}`;
+    lastSyncStatus.className = 'last-sync' + (hasError ? ' error' : ' success');
+  } catch {}
+}
 
 syncSettingsBtn.addEventListener('click', showSettingsModal);
 pushBtn.addEventListener('click', doPush);
@@ -360,3 +416,4 @@ trimBtn.addEventListener('click', () => {
 });
 
 loadArchives();
+loadLastSyncStatus();

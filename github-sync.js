@@ -85,11 +85,20 @@ async function getGitHubFile(pat) {
   return res.json();
 }
 
+function bytesToBase64(bytes) {
+  let binary = '';
+  const chunk = 8192;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...new Uint8Array(bytes).subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
 async function putGitHubFile(pat, contentBytes, sha) {
   const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${GITHUB_FILE}`;
   const body = {
     message: `Tab Archiver sync — ${new Date().toLocaleString()}`,
-    content: btoa(String.fromCharCode(...new Uint8Array(contentBytes))),
+    content: bytesToBase64(contentBytes),
   };
   if (sha) body.sha = sha;
 
@@ -110,17 +119,16 @@ async function putGitHubFile(pat, contentBytes, sha) {
   return res.json();
 }
 
-export async function pushToGitHub() {
+export async function pushToGitHub(storage) {
   const config = await getConfig();
   if (!config || !config.pat || !config.passphrase) {
     throw new Error('GitHub not configured. Open settings and enter your PAT and passphrase.');
   }
 
-  const { getAllArchives } = await import('./storage.js');
-  const archives = await getAllArchives();
+  const archives = await storage.getAllArchives();
 
   if (archives.length === 0) {
-    throw new Error('No archives to push.');
+    return;
   }
 
   let sha = null;
@@ -136,7 +144,7 @@ export async function pushToGitHub() {
   await putGitHubFile(config.pat, encrypted, sha);
 }
 
-export async function pullFromGitHub() {
+export async function pullFromGitHub(storage) {
   const config = await getConfig();
   if (!config || !config.pat || !config.passphrase) {
     throw new Error('GitHub not configured. Open settings and enter your PAT and passphrase.');
@@ -144,7 +152,7 @@ export async function pullFromGitHub() {
 
   const existing = await getGitHubFile(config.pat);
   if (!existing) {
-    throw new Error('No archives found on GitHub.');
+    return { added: 0, total: 0 };
   }
 
   const raw = atob(existing.content.replace(/\n/g, ''));
@@ -156,8 +164,7 @@ export async function pullFromGitHub() {
     throw new Error('Invalid archive data on GitHub.');
   }
 
-  const { getAllArchives, saveArchive } = await import('./storage.js');
-  const localArchives = await getAllArchives();
+  const localArchives = await storage.getAllArchives();
 
   const localKeys = new Set(
     localArchives.map(a => `${a.clientId || ''}:${a.timestamp}`)
@@ -172,7 +179,7 @@ export async function pullFromGitHub() {
   }
 
   for (const a of toAdd) {
-    await saveArchive(a.tabs || [], {
+    await storage.saveArchive(a.tabs || [], {
       timestamp: a.timestamp,
       clientId: a.clientId || '',
       clientName: a.clientName || '',
@@ -180,4 +187,53 @@ export async function pullFromGitHub() {
   }
 
   return { added: toAdd.length, total: remoteArchives.length };
+}
+
+export async function testConnection(pat, passphrase) {
+  const result = { patValid: false, fileExists: false, decryptSuccess: false, archiveCount: 0, error: '' };
+
+  try {
+    const userRes = await fetch('https://api.github.com/user', {
+      headers: { 'Authorization': `Bearer ${pat}`, 'Accept': 'application/vnd.github.v3+json' },
+    });
+    if (!userRes.ok) {
+      const body = await userRes.json().catch(() => ({}));
+      result.error = `PAT invalid: ${body.message || userRes.status}`;
+      return result;
+    }
+    result.patValid = true;
+  } catch (e) {
+    result.error = `Network error: ${e.message}`;
+    return result;
+  }
+
+  try {
+    const existing = await getGitHubFile(pat);
+    if (!existing) {
+      result.fileExists = false;
+      result.archiveCount = 0;
+      return result;
+    }
+    result.fileExists = true;
+
+    const raw = atob(existing.content.replace(/\n/g, ''));
+    const encryptedBytes = Uint8Array.from(raw, c => c.charCodeAt(0));
+
+    try {
+      const json = await decrypt(encryptedBytes, passphrase);
+      const archives = JSON.parse(json);
+      if (Array.isArray(archives)) {
+        result.archiveCount = archives.length;
+        result.decryptSuccess = true;
+      } else {
+        result.error = 'Remote file has invalid format.';
+      }
+    } catch (e) {
+      result.error = `Decryption failed: ${e.message}. Check passphrase matches other devices.`;
+    }
+  } catch (e) {
+    if (!result.error) result.error = `GitHub error: ${e.message}`;
+  }
+
+  return result;
 }

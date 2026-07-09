@@ -14,6 +14,8 @@ captureBtn.addEventListener('click', async () => {
       const parts = ['Archived successfully!'];
       if (resp.pulled > 0) parts.push(`Pulled ${resp.pulled} from sync.`);
       if (resp.pushed) parts.push('Synced to GitHub.');
+      if (resp.pullError) parts.push(`Pull: ${resp.pullError}`);
+      if (resp.pushError) parts.push(`Push: ${resp.pushError}`);
       statusEl.textContent = parts.join(' ');
     } else {
       statusEl.textContent = `Error: ${resp.error}`;

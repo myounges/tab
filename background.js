@@ -1,6 +1,8 @@
-import { saveArchive } from './storage.js';
+import { getAllArchives, saveArchive } from './storage.js';
 import { getClientInfo } from './client-config.js';
 import { pullFromGitHub, pushToGitHub } from './github-sync.js';
+
+const storage = { getAllArchives, saveArchive };
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'capture') {
@@ -11,14 +13,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
+const SYNC_RESULT_KEY = 'lastSyncResult';
+
 async function captureAllTabs() {
-  let syncInfo = { pulled: 0, pushed: false };
+  let syncInfo = { pulled: 0, pushed: false, pullError: '', pushError: '', at: Date.now() };
 
   try {
-    const result = await pullFromGitHub();
+    const result = await pullFromGitHub(storage);
     syncInfo.pulled = result.added;
-  } catch {
-    // GitHub not configured or unreachable — capture proceeds without sync
+  } catch (e) {
+    syncInfo.pullError = e.message;
+    console.error('Tab Archiver — pull failed:', e.message);
   }
 
   const windows = await chrome.windows.getAll({ populate: true });
@@ -69,12 +74,14 @@ async function captureAllTabs() {
   await saveArchive(allTabs, { clientId: client.id, clientName: client.name });
 
   try {
-    await pushToGitHub();
+    await pushToGitHub(storage);
     syncInfo.pushed = true;
-  } catch {
-    // Push failure is non-fatal — data is saved locally
+  } catch (e) {
+    syncInfo.pushError = e.message;
+    console.error('Tab Archiver — push failed:', e.message);
   }
 
   await chrome.tabs.remove(tabIdsToClose);
+  chrome.storage.local.set({ [SYNC_RESULT_KEY]: syncInfo }).catch(() => {});
   return { ok: true, ...syncInfo };
 }

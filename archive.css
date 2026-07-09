@@ -557,6 +557,35 @@ main {
   color: #16a34a;
 }
 
+.last-sync {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 4px 24px 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  min-height: 18px;
+}
+.last-sync.error {
+  color: var(--color-danger);
+}
+.last-sync.success {
+  color: #16a34a;
+}
+
+.connection-result {
+  font-size: 13px;
+  padding: 8px 0;
+  min-height: 20px;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+.connection-result.error {
+  color: var(--color-danger);
+}
+.connection-result.success {
+  color: #16a34a;
+}
+
 .client-badge {
   display: inline-block;
   font-size: 11px;
