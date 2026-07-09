@@ -42,7 +42,7 @@ export async function getAllArchives() {
   const store = tx.objectStore(STORE_NAME);
   const archives = await new Promise((resolve, reject) => {
     const result = [];
-    const cursor = store.openCursor(null, 'prev');
+    const cursor = store.index('timestamp').openCursor(null, 'prev');
     cursor.onsuccess = (e) => {
       const c = e.target.result;
       if (c) {

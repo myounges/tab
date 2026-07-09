@@ -1,13 +1,9 @@
 import { getAllArchives } from './storage.js';
-import { pushToGitHub, pullFromGitHub } from './github-sync.js';
 
 const captureBtn = document.getElementById('captureBtn');
 const statusEl = document.getElementById('status');
 const recentList = document.getElementById('recentList');
 const viewAllLink = document.getElementById('viewAll');
-const popupPushBtn = document.getElementById('popupPushBtn');
-const popupPullBtn = document.getElementById('popupPullBtn');
-const popupSyncStatus = document.getElementById('popupSyncStatus');
 
 captureBtn.addEventListener('click', async () => {
   captureBtn.disabled = true;
@@ -15,7 +11,10 @@ captureBtn.addEventListener('click', async () => {
   try {
     const resp = await chrome.runtime.sendMessage({ type: 'capture' });
     if (resp.ok) {
-      statusEl.textContent = 'Archived successfully!';
+      const parts = ['Archived successfully!'];
+      if (resp.pulled > 0) parts.push(`Pulled ${resp.pulled} from sync.`);
+      if (resp.pushed) parts.push('Synced to GitHub.');
+      statusEl.textContent = parts.join(' ');
     } else {
       statusEl.textContent = `Error: ${resp.error}`;
     }
@@ -43,35 +42,6 @@ async function loadRecent() {
 viewAllLink.addEventListener('click', (e) => {
   e.preventDefault();
   chrome.tabs.create({ url: chrome.runtime.getURL('archive.html') });
-});
-
-popupPushBtn.addEventListener('click', async () => {
-  popupPushBtn.disabled = true;
-  popupSyncStatus.textContent = 'Pushing…';
-  try {
-    await pushToGitHub();
-    popupSyncStatus.textContent = 'Pushed successfully.';
-  } catch (err) {
-    popupSyncStatus.textContent = `Push failed: ${err.message}`;
-  }
-  popupPushBtn.disabled = false;
-});
-
-popupPullBtn.addEventListener('click', async () => {
-  popupPullBtn.disabled = true;
-  popupSyncStatus.textContent = 'Pulling…';
-  try {
-    const result = await pullFromGitHub();
-    if (result.added === 0) {
-      popupSyncStatus.textContent = `Up to date (${result.total} on GitHub).`;
-    } else {
-      popupSyncStatus.textContent = `Pulled ${result.added} new archive(s).`;
-    }
-    loadRecent();
-  } catch (err) {
-    popupSyncStatus.textContent = `Pull failed: ${err.message}`;
-  }
-  popupPullBtn.disabled = false;
 });
 
 loadRecent();
